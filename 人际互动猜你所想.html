@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人机互动猜你所想</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 React, ReactDOM, and Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Tone.js CDN 用于生成音效 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        /* 使用 Inter 字体作为默认字体 */
+        :root {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- React 渲染的目标容器 -->
+    <div id="root"></div>
+
+    <!-- 应用程序代码 (使用 type="text/babel" 进行 JSX 转译) -->
+    <script type="text/babel">
+        // Import necessary React hooks
+        const { useState, useCallback, useMemo } = React;
+        
+        // Utility function for Fisher-Yates shuffle
+        const shuffleArray = (array) => {
+          for (let i = array.length - 1; i > 0; i--) {
+            // Random index from 0 to i
+            const j = Math.floor(Math.random() * (i + 1));
+            // Swap elements
+            [array[i], array[j]] = [array[j], array[i]];
+          }
+          return array;
+        };
+
+        // --- Main React Component ---
+        const App = () => {
+          
+          // Define total number of turns
+          const totalTurns = 20;
+
+          // Initialize Tone.js Synth once using useMemo
+          const synth = useMemo(() => {
+            // Create a polyphonic synth, configured for a pluck/strum sound
+            const s = new Tone.PolySynth(Tone.Synth, {
+                // Use triangle for a slightly richer, string-like tone
+                oscillator: { type: "triangle" }, 
+                envelope: {
+                    attack: 0.001, // Very fast attack for pluck
+                    decay: 0.2,   // Quick decay
+                    sustain: 0.0,   // No sustain for a plucked sound
+                    release: 0.4    // Moderate release for a small tail
+                }
+            }).toDestination();
+            return s;
+          }, []);
+
+          // Function to play a notification sound (Strumming effect)
+          const playSound = useCallback(() => {
+            // Web Audio API requires the context to be started by user interaction
+            if (Tone.context.state !== 'running') {
+              Tone.start();
+            }
+            // Use an arpeggio (strum) effect for a longer, string-like sound
+            // Play a C major chord (C4, E4, G4) staggered by 50ms
+            const notes = ["C4", "E4", "G4"];
+            const now = Tone.now();
+            
+            notes.forEach((note, index) => {
+                // Stagger the notes slightly to simulate a strum or arpeggio
+                synth.triggerAttackRelease(note, "8n", now + index * 0.05); 
+            });
+            
+          }, [synth]);
+
+          // 1. Generate fixed quota random sequence: 10 'A's and 10 'B's, then shuffle.
+          const [sequence] = useState(() => {
+            const initialSequence = Array(totalTurns / 2).fill('A').concat(Array(totalTurns / 2).fill('B'));
+            return shuffleArray(initialSequence);
+          });
+
+          // State: Stores the ID of the currently selected image ('A' or 'B')
+          const [currentSelection, setCurrentSelection] = useState(null); 
+          // State: Tracks the current sequence index (0 to 19)
+          const [currentIndex, setCurrentIndex] = useState(0); 
+          
+          // Visual placeholder URLs and descriptions
+          const imageAssets = {
+            'A': {
+                // Placeholder image for A (Indigo theme)
+                url: 'https://pic1.imgdb.cn/item/6926ee703203f7be00343f2d.jpg', 
+                alt: 'Image A Visual Placeholder (Landscape)',
+                color: 'bg-indigo-600'
+            },
+            'B': {
+                // Placeholder image for B (Emerald theme)
+                url: 'https://pic1.imgdb.cn/item/6926ee743203f7be00343f2e.jpg', 
+                alt: 'Image B Visual Placeholder (Person)',
+                color: 'bg-emerald-600'
+            }
+          };
+          
+          // Selection logic: sequentially takes the next image from the pre-generated sequence
+          const selectRandomImage = useCallback(() => {
+            if (currentIndex < totalTurns) {
+              // Get the image ID for the current turn
+              const chosenId = sequence[currentIndex];
+              
+              // Update state
+              setCurrentSelection(chosenId);
+              setCurrentIndex(prevIndex => prevIndex + 1);
+
+              // Play the notification sound (now the strumming sound)
+              playSound(); 
+            }
+          }, [currentIndex, sequence, playSound, totalTurns]); 
+
+
+          // Get the assets for the currently selected image
+          const chosenAsset = currentSelection ? imageAssets[currentSelection] : null;
+
+          // Check if all selections are finished
+          const isFinished = currentIndex >= totalTurns;
+          const isButtonDisabled = isFinished;
+
+          return (
+            <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans antialiased">
+              <div className="max-w-4xl mx-auto">
+                
+                {/* Title */}
+                <h1 className="text-3xl font-extrabold text-gray-800 mb-2 text-center">
+                  人机互动猜你所想
+                </h1>
+                <p className="text-gray-500 mb-6 text-center">
+                  {/* Display Rounds Completed: {currentIndex} / {totalTurns} */}
+                  <span className="font-semibold text-indigo-700 block mt-2"></span>
+                </p>
+                
+                {/* Input Cards */}
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
+                  
+                  {/* Image A Input */}
+                  <div className="bg-white p-5 rounded-xl shadow-lg border-t-4 border-indigo-500 transition hover:shadow-xl">
+                    <label className="block text-lg font-semibold text-indigo-700 mb-2 flex items-center">
+                      <span className="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-600 rounded-full mr-3 text-xl font-bold">A</span>
+                      图片 A
+                    </label>
+                    
+                    {/* --- Image Display Area --- */}
+                    <div className="mb-4 aspect-video">
+                      <img 
+                        src={imageAssets['A'].url}
+                        alt={imageAssets['A'].alt}
+                        className="w-full h-full rounded-lg shadow-md object-cover"
+                        onError={(e) => {
+                            e.target.onerror = null; 
+                            e.target.src = 'https://placehold.co/400x300/6366f1/ffffff?text=Image+A+Fallback';
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Image B Input */}
+                  <div className="bg-white p-5 rounded-xl shadow-lg border-t-4 border-emerald-500 transition hover:shadow-xl">
+                    <label className="block text-lg font-semibold text-emerald-700 mb-2 flex items-center">
+                      <span className="w-8 h-8 flex items-center justify-center bg-emerald-100 text-emerald-600 rounded-full mr-3 text-xl font-bold">B</span>
+                      图片 B
+                    </label>
+                    
+                    {/* --- Image Display Area --- */}
+                    <div className="mb-4 aspect-video">
+                      <img 
+                        src={imageAssets['B'].url}
+                        alt={imageAssets['B'].alt}
+                        className="w-full h-full rounded-lg shadow-md object-cover"
+                        onError={(e) => {
+                            e.target.onerror = null; 
+                            e.target.src = 'https://placehold.co/400x300/059669/ffffff?text=Image+B+Fallback';
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+
+                {/* Action Button */}
+                <div className="flex justify-center mb-10">
+                  <button
+                    onClick={selectRandomImage}
+                    disabled={isButtonDisabled}
+                    className={`
+                      px-10 py-4 text-lg font-bold rounded-full transition-all duration-300 transform shadow-xl focus:outline-none focus:ring-4 focus:ring-blue-300
+                      ${isButtonDisabled 
+                        ? 'bg-gray-400 text-gray-700 cursor-not-allowed' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98]'}
+                    `}
+                  >
+                    {isFinished 
+                      ? `游戏已完成！` 
+                      : `AI进行选择 (${currentIndex} / ${totalTurns})`
+                    }
+                  </button>
+                </div>
+
+                {/* Selected Image Display */}
+                {chosenAsset && (
+                  <div className="bg-white p-6 md:p-8 rounded-xl shadow-2xl border-2 border-dashed border-blue-300 transition-opacity duration-500 ease-in-out">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-500 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15.5v-7h2v7h-2z"/></svg>
+                      AI选择的结果是
+                    </h2>
+                    
+                    {/* Selected Image Placeholder */}
+                    <div className={`p-4 rounded-lg text-white font-semibold mb-4 text-center text-xl ${chosenAsset.color}`}>
+                        已选：图片 {currentSelection}
+                    </div>
+
+                    <div className="mb-4 aspect-video">
+                      <img 
+                        src={chosenAsset.url} 
+                        alt={`Selected: ${chosenAsset.alt}`}
+                        className="w-full h-full rounded-lg shadow-xl object-cover border-4 border-blue-500"
+                        onError={(e) => {
+                            e.target.onerror = null; 
+                            e.target.src = `https://placehold.co/400x300/3b82f6/ffffff?text=Selected+${currentSelection}+Fallback`;
+                        }}
+                      />
+                    </div>
+                    
+                  </div>
+                )}
+                
+              </div>
+            </div>
+          );
+        };
+
+        // 渲染组件
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
